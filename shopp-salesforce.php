@@ -93,5 +93,3 @@ class Shopp_SalesForce {
 }
 
 new Shopp_SalesForce();
-
-?>
