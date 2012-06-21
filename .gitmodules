@@ -1,0 +1,3 @@
+[submodule "lib/salesforce"]
+	path = lib/salesforce
+	url = git://github.com/developerforce/Force.com-Toolkit-for-PHP.git
