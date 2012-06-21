@@ -82,6 +82,7 @@ class Shopp_SalesForce {
 		$cObject->Status = 'Active';
 		try {
 			$campaignResponse = $sfClient->upsert('Name', array($cObject), 'Campaign');
+		}
 		catch(Exception $e) {
 			return 'Failed creating the campaign :(';
 		}
@@ -128,7 +129,7 @@ class Shopp_SalesForce {
 		}
 
 		// return the response
-		return array($leadResponse, $campaignResponse);
+		return array($leadResponse, $campaignResponse, $campaignMemberResponse);
 	}
 
 	public function render_display_settings() {
