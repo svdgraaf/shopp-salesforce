@@ -74,44 +74,58 @@ class Shopp_SalesForce {
 
 
 		// create a campaign for the product, and add the lead to it
-		$sObject = new stdClass();
-		$sObject->Name = $purchased->name;
-		$sObject->Description = $purchased->description;
-		$sObject->IsActive = True;
-		$sObject->Type = 'Download';
-		$sObject->Status = 'Active';
-		$campaignResponse = $sfClient->upsert('Name', array($sObject), 'Campaign');
+		$cObject = new stdClass();
+		$cObject->Name = $purchased->name;
+		$cObject->Description = $purchased->description;
+		$cObject->IsActive = True;
+		$cObject->Type = 'Download';
+		$cObject->Status = 'Active';
+		try {
+			$campaignResponse = $sfClient->upsert('Name', array($cObject), 'Campaign');
+		catch(Exception $e) {
+			return 'Failed creating the campaign :(';
+		}
 
 		// setup Lead object
-		$sObject = new stdClass();
+		$lObject = new stdClass();
 
 		// add Personal data
-		$sObject->FirstName = $customer->firstname;
-		$sObject->LastName = $customer->lastname;
-		$sObject->Email = $customer->email;
-		$sObject->Phone = $purchase->phone;
+		$lObject->FirstName = $customer->firstname;
+		$lObject->LastName = $customer->lastname;
+		$lObject->Email = $customer->email;
+		$lObject->Phone = $purchase->phone;
 
 		// add Address data
-		$sObject->City = $address->city;
-		$sObject->Country = $address->country;
-		$sObject->PostalCode = $address->postcode;
-		$sObject->State = $address->state;
-		$sObject->Street = $address->address;
+		$lObject->City = $address->city;
+		$lObject->Country = $address->country;
+		$lObject->PostalCode = $address->postcode;
+		$lObject->State = $address->state;
+		$lObject->Street = $address->address;
 
 		if((string)$purchase->company == '')
 		{
 			$purchase->company = 'Onbekend';	
 		}
-		$sObject->Company = (string)$purchase->company;
+		$lObject->Company = (string)$purchase->company;
 
 		// upsert the contact (find-and-update/create)
-		$leadResponse = $sfClient->upsert('Email', array($sObject), 'Lead');
+		try {
+			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Lead');
+		}
+		catch(Exception $e) {
+			return 'Failed creating the lead :(';
+		}
 
 		// connect them together
 		$mObject = new stdClass();
 		$mObject->CampaignId = $campaignResponse[0]->id;
 		$mObject->LeadId = $leadResponse[0]->id;
-		$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
+		try {
+			$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
+		}
+		catch(Exception $e) {
+			return 'Failed adding the lead to the campaign :(';
+		}
 
 		// return the response
 		return array($leadResponse, $campaignResponse);
