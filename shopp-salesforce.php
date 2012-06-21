@@ -72,6 +72,16 @@ class Shopp_SalesForce {
 		$sfClient->createConnection(SALESFORCE_LIBRARY_PATH.'/enterprise.wsdl.xml');
 		$login = $sfClient->login($this->api_username, $this->api_password);
 
+
+		// create a campaign for the product, and add the lead to it
+		$sObject = new stdClass();
+		$sObject->Name = $purchased->name;
+		$sObject->Description = $purchased->description;
+		$sObject->IsActive = True;
+		$sObject->Type = 'Download';
+		$sObject->Status = 'Active';
+		$campaignResponse = $sfClient->upsert('Name', array($sObject), 'Campaign');
+
 		// setup Lead object
 		$sObject = new stdClass();
 
@@ -97,9 +107,14 @@ class Shopp_SalesForce {
 		// upsert the contact (find-and-update/create)
 		$leadResponse = $sfClient->upsert('Email', array($sObject), 'Lead');
 
+		// connect them together
+		$mObject = new stdClass();
+		$mObject->CampaignId = $campaignResponse[0]->id;
+		$mObject->LeadId = $leadResponse[0]->id;
+		$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
 
 		// return the response
-		return $response;
+		return array($leadResponse, $campaignResponse);
 	}
 
 	public function render_display_settings() {
