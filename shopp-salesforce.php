@@ -54,6 +54,7 @@ class Shopp_SalesForce {
 		
 		$customer = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_customer WHERE id = '".$purchase->customer."'");
 		$address = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_address WHERE customer = '".$purchase->customer."'");
+		$purchased = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_purchased WHERE purchase = '".$purchase->id."'");
 
 		// only update customer if we can save the data
 		if($customer->marketing != 'yes')
@@ -71,8 +72,8 @@ class Shopp_SalesForce {
 		$sfClient->createConnection(SALESFORCE_LIBRARY_PATH.'/enterprise.wsdl.xml');
 		$login = $sfClient->login($this->api_username, $this->api_password);
 
-		// setup Contact object
-		$sObject = new stdclass();
+		// setup Lead object
+		$sObject = new stdClass();
 
 		// add Personal data
 		$sObject->FirstName = $customer->firstname;
@@ -81,14 +82,21 @@ class Shopp_SalesForce {
 		$sObject->Phone = $purchase->phone;
 
 		// add Address data
-		$sObject->MailingCity = $address->city;
-		$sObject->MailingCountry = $address->country;
-		$sObject->MailingPostalCode = $address->postcode;
-		$sObject->MailingState = $address->state;
-		$sObject->MailingStreet = $address->address;
+		$sObject->City = $address->city;
+		$sObject->Country = $address->country;
+		$sObject->PostalCode = $address->postcode;
+		$sObject->State = $address->state;
+		$sObject->Street = $address->address;
+
+		if((string)$purchase->company == '')
+		{
+			$purchase->company = 'Onbekend';	
+		}
+		$sObject->Company = (string)$purchase->company;
 
 		// upsert the contact (find-and-update/create)
-		$response = $sfClient->upsert('Email', array($sObject), 'Contact');
+		$leadResponse = $sfClient->upsert('Email', array($sObject), 'Lead');
+
 
 		// return the response
 		return $response;
