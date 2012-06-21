@@ -1,4 +1,6 @@
 <?php
+ini_set('display_errors',1);
+error_reporting(E_ALL);
 /*
 Plugin Name: Shopp + Salesforce
 Description: Customers who opt-in to email marketing from your WordPress e-commerce site during checkout are automatically added to Salesforce.
@@ -47,11 +49,49 @@ class Shopp_SalesForce {
 		$page = add_submenu_page($ShoppMenu,__('Shopp + SalesForce', 'page title'), __('+ SalesForce','menu title'), defined('SHOPP_USERLEVEL') ? SHOPP_USERLEVEL : 'manage_options', 'shopp-salesforce', array(&$this, 'render_display_settings'));
 	}
  	
-	public function add_to_salesforce($Purchase) {
+	public function add_to_salesforce($purchase) {
 		global $wpdb;
 		
-		$customer = $wpdb->get_var("SELECT * FROM ".$wpdb->prefix."shopp_customer WHERE id = '".$Purchase->customer."'");
-		// do the shizzle
+		$customer = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_customer WHERE id = '".$purchase->customer."'");
+		$address = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_address WHERE customer = '".$purchase->customer."'");
+
+		// only update customer if we can save the data
+		if($customer->marketing != 'yes')
+		{
+			return '';
+		}
+
+		// client setup
+		define("SALESFORCE_LIBRARY_PATH", dirname(__FILE__) . '/lib/salesforce/soapclient/');
+		require_once (SALESFORCE_LIBRARY_PATH.'SforceEnterpriseClient.php');
+		require_once (SALESFORCE_LIBRARY_PATH.'SforceHeaderOptions.php');
+
+		// connect to salesforce
+		$sfClient = new SforceEnterpriseClient();
+		$sfClient->createConnection(SALESFORCE_LIBRARY_PATH.'/enterprise.wsdl.xml');
+		$login = $sfClient->login($this->api_username, $this->api_password);
+
+		// setup Contact object
+		$sObject = new stdclass();
+
+		// add Personal data
+		$sObject->FirstName = $customer->firstname;
+		$sObject->LastName = $customer->lastname;
+		$sObject->Email = $customer->email;
+		$sObject->Phone = $purchase->phone;
+
+		// add Address data
+		$sObject->MailingCity = $address->city;
+		$sObject->MailingCountry = $address->country;
+		$sObject->MailingPostalCode = $address->postcode;
+		$sObject->MailingState = $address->state;
+		$sObject->MailingStreet = $address->address;
+
+		// upsert the contact (find-and-update/create)
+		$response = $sfClient->upsert('Email', array($sObject), 'Contact');
+
+		// return the response
+		return $response;
 	}
 
 	public function render_display_settings() {
@@ -63,6 +103,15 @@ class Shopp_SalesForce {
 			
 			update_option("shopp_salesforce_api_username", $this->api_username);
 			update_option("shopp_salesforce_api_password", $this->api_password);
+
+			// test button pressed
+			if($_POST['submit'] == 'Save & Test') {
+				global $wpdb;
+				// get the latest purchase, and push it
+				$purchase = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_purchase ORDER BY id DESC LIMIT 1");
+				$response = $this->add_to_salesforce($purchase);
+
+			}
 		}
 ?>
 <div class="wrap">
@@ -83,9 +132,16 @@ class Shopp_SalesForce {
 						</tr>
 						</table>
 						<input type="submit" class="button-primary" value="Save Settings" name="submit" />
+						<input type="submit" class="button" value="Save & Test" name="submit" />
 					</form>
 				</div>
-			</div>
+				<? if($response){ ?>
+					<h3>Test Response</h3>
+					<pre>
+						<? var_dump($response); ?>
+					</pre>
+				<? }?>
+				</div>
 		</div>
 	</div>
 </div>
