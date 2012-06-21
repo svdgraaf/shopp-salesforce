@@ -56,9 +56,10 @@ class Shopp_SalesForce {
 
 	public function render_display_settings() {
 		wp_nonce_field('shopp-salesforce');	
-		if(!empty($_POST['submit'])){
-			$this->api_key = stripslashes($_POST['api_username']);
-			$this->listid = stripslashes($_POST['api_password']);
+
+		if(count($_POST) > 0){
+			$this->api_username = stripslashes($_POST['api_username']);
+			$this->api_password = stripslashes($_POST['api_password']);
 			
 			update_option("shopp_salesforce_api_username", $this->api_username);
 			update_option("shopp_salesforce_api_password", $this->api_password);
@@ -74,11 +75,11 @@ class Shopp_SalesForce {
 					<form action="" method="post">
 						<table>
 							<th>API Username:</th>
-							<td><input type="text" name="api_username" size="35" value="<?php echo $this->api_key; ?>" /></td>
+							<td><input type="text" name="api_username" size="35" value="<?php echo $this->api_username; ?>" /></td>
 						</tr>
 						<tr>
 							<th>API Password:</th>
-							<td><input type="password" name="api_password"  size="35" value="<?php echo $this->listid; ?>" /></td>
+							<td><input type="password" name="api_password"  size="35" value="<?php echo $this->api_password; ?>" /></td>
 						</tr>
 						</table>
 						<input type="submit" class="button-primary" value="Save Settings" name="submit" />
