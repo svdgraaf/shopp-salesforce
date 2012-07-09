@@ -57,10 +57,12 @@ class Shopp_SalesForce {
 		$purchased = $wpdb->get_row("SELECT * FROM ".$wpdb->prefix."shopp_purchased WHERE purchase = '".$purchase->id."'");
 
 		// only update customer if we can save the data
-		if($customer->marketing != 'yes')
-		{
-			return '';
+		if(!$customer){
+			return 'User not found?';
 		}
+
+		// define the userid
+		$userid = $customer->wpuser;
 
 		// client setup
 		define("SALESFORCE_LIBRARY_PATH", dirname(__FILE__) . '/lib/salesforce/soapclient/');
@@ -71,7 +73,6 @@ class Shopp_SalesForce {
 		$sfClient = new SforceEnterpriseClient();
 		$sfClient->createConnection(SALESFORCE_LIBRARY_PATH.'/enterprise.wsdl.xml');
 		$login = $sfClient->login($this->api_username, $this->api_password);
-
 
 		// create a campaign for the product, and add the lead to it
 		$cObject = new stdClass();
@@ -103,6 +104,11 @@ class Shopp_SalesForce {
 		$lObject->State = $address->state;
 		$lObject->Street = $address->address;
 
+		// get the meta data from the user, if available
+		$lObject->Industry = get_user_meta($userid, 'branch', true);
+		$lObject->NumberOfEmployees = intval(get_user_meta($userid, 'aantal_werknemers', true));
+		$lObject->Title = get_user_meta($userid, 'functie', true);
+
 		if((string)$purchase->company == '')
 		{
 			$purchase->company = 'Onbekend';	
@@ -114,7 +120,8 @@ class Shopp_SalesForce {
 			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Lead');
 		}
 		catch(Exception $e) {
-			return 'Failed creating the lead :(';
+			// return 'Failed creating the lead :(';
+			return array('Failed creating the lead :(', $e);
 		}
 
 		// connect them together
@@ -125,11 +132,11 @@ class Shopp_SalesForce {
 			$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
 		}
 		catch(Exception $e) {
-			return 'Failed adding the lead to the campaign :(';
+			return array('Failed adding the lead to the campaign :(', $e);
 		}
 
 		// return the response
-		return array($leadResponse, $campaignResponse, $campaignMemberResponse);
+		return array($lObject, $leadResponse, $cObject, $campaignResponse, $mObject, $campaignMemberResponse);
 	}
 
 	public function render_display_settings() {
