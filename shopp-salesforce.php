@@ -29,6 +29,7 @@ License: GPLv2
 class Shopp_SalesForce {
 	public static $api_key;
 	public static $listid;
+	public static $campaigns;
 
 	public function __construct() {
 		add_action('shopp_init', array(&$this, 'init'));
@@ -36,6 +37,7 @@ class Shopp_SalesForce {
 		
 		$this->api_username = get_option("shopp_salesforce_api_username");
 		$this->api_password = get_option("shopp_salesforce_api_password");
+		$this->campaigns = array('701E0000000QPmb','701E0000000QPmR'); // Z24 alerts, Ondernemers Alerts
 	}
 
 	public function init() {
