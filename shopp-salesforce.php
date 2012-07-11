@@ -3,9 +3,9 @@ ini_set('display_errors',1);
 error_reporting(E_ALL);
 /*
 Plugin Name: Shopp + Salesforce
-Description: Customers who opt-in to email marketing from your WordPress e-commerce site during checkout are automatically added to Salesforce.
+Description: Customers are automatically added to Salesforce.
 Version: 1.0.3
-Plugin URI: http://optimizemyshopp.com
+Plugin URI: http://svdgraaf.nl/
 Author: Sander van de Graaf
 Author URI: http://svdgraaf.nl
 License: GPLv2
@@ -17,8 +17,7 @@ License: GPLv2
 	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
 
-	This plugin is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	This plugin is distributed in the hope that it will be useful","	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
 
@@ -28,8 +27,32 @@ License: GPLv2
 
 class Shopp_SalesForce {
 	public static $api_key;
-	public static $listid;
-	public static $campaigns;
+	public $_salesforce_fields = array(
+		"AnnualRevenue" => 'double',
+		"City" => 'string', 
+		"Company" => 'string', 
+		"Country" => 'string',
+		"Email" => 'string',
+		"Fax" => 'string',
+		"FirstName" => 'string',
+		"Industry" => 'string',
+		"LastName" => 'string',
+		"LeadSource" => 'string',
+		"MobilePhone" => 'string',
+		"Name" => 'string',
+		"NumberOfEmployees" => 'int',
+		"NumberofLocations" => 'double',
+		"Phone" => 'string',
+		"PostalCode" => 'string',
+		"Rating" => 'string',
+		"SICCode" => 'string',
+		"Salutation" => 'string',
+		"State" => 'string',
+		"Status" => 'string',
+		"Street" => 'string',
+		"Title" => 'string',
+		"Website" => 'string'
+	);
 
 	public function __construct() {
 		add_action('shopp_init', array(&$this, 'init'));
@@ -37,7 +60,7 @@ class Shopp_SalesForce {
 		
 		$this->api_username = get_option("shopp_salesforce_api_username");
 		$this->api_password = get_option("shopp_salesforce_api_password");
-		$this->campaigns = array('701E0000000QPmb','701E0000000QPmR'); // Z24 alerts, Ondernemers Alerts
+		$this->api_mapping = json_decode(get_option("shopp_salesforce_api_mapping"));
 	}
 
 	public function init() {
@@ -106,10 +129,20 @@ class Shopp_SalesForce {
 		$lObject->State = $address->state;
 		$lObject->Street = $address->address;
 
-		// get the meta data from the user, if available
-		$lObject->Industry = get_user_meta($userid, 'branch', true);
-		$lObject->NumberOfEmployees = intval(get_user_meta($userid, 'aantal_werknemers', true));
-		$lObject->Title = get_user_meta($userid, 'functie', true);
+		// get the meta data from the mapping
+		foreach($this->api_mapping AS $metafield => $field)
+		{
+			$value = get_user_meta($userid, $metafield, true);
+			if($this->_salesforce_fields[$field] == 'int')
+			{
+				$value = intval($value);
+			}
+			if($this->_salesforce_fields[$field] == 'double')
+			{
+				$value = doubleval($value);
+			}
+			$lObject->$field = $value;
+		}
 
 		if((string)$purchase->company == '')
 		{
@@ -144,7 +177,7 @@ class Shopp_SalesForce {
 	public function render_display_settings() {
 		wp_nonce_field('shopp-salesforce');	
 
-		if(count($_POST) > 0){
+		if(isset($_POST['api_username'])){
 			$this->api_username = stripslashes($_POST['api_username']);
 			$this->api_password = stripslashes($_POST['api_password']);
 			
@@ -160,12 +193,29 @@ class Shopp_SalesForce {
 
 			}
 		}
+
+		// did we get an updated mapping?
+		if(isset($_POST['fields']))
+		{
+			$mapping = array();
+			foreach($_POST['fields'] AS $i => $metafield)
+			{
+				if(trim($metafield) != '' && trim($_POST['mapping'][$i]) != '')
+				{
+					$mapping[$metafield] = $_POST['mapping'][$i];
+				}
+			}
+
+			$this->api_mapping = $mapping;
+			update_option("shopp_salesforce_api_mapping", json_encode($this->api_mapping));
+		}
+
 ?>
 <div class="wrap">
 	<h2>Shopp + SalesForce</h2>
 	<div class="postbox-container" style="width:65%;">
 		<div class="metabox-holder">	
-			<div id="shopp-mailchimp-settings" class="postbox">
+			<div id="shopp-salesforce-settings" class="postbox">
 				<h3 class="hndle"><span>SalesForce Settings</span></h3>
 				<div class="inside"><p>
 					<form action="" method="post">
@@ -188,7 +238,50 @@ class Shopp_SalesForce {
 						<? var_dump($response); ?>
 					</pre>
 				<? }?>
+				<h3 class="hndle"><span>Salesforce meta-mapping</span></h3>
+				<div class="inside">
+					<form action="" method="post">
+						<table>
+							<thead>
+								<tr>
+									<td>Meta key</td>
+									<td>Salesforce field</td>
+								</tr>
+							</thead>
+							<tbody>
+								<? $i=0;$max=count($this->api_mapping) + 5;foreach($this->api_mapping AS $metafield => $mapping) {
+								$i++; ?>
+								<tr>
+									<td><input type="text" name="fields[<? echo $i; ?>]" value="<?= $metafield; ?>"></td>
+									<td>
+										<select name="mapping[<? echo $i; ?>]">
+											<option value="">None</option>
+											<? foreach($this->_salesforce_fields AS $field => $type) { ?>
+											<option value="<? echo $field; ?>" <? if($mapping == $field){?>selected="selected"<?}?>><? echo $field; ?></option>
+											<? } ?>
+										</select>
+									</td>
+								</tr>
+								<? } ?>
+								<? for($i=$i;$i<$max;$i++){ ?>
+								<tr>
+									<td><input type="text" name="fields[<? echo $i; ?>]"></td>
+									<td>
+										<select name="mapping[<? echo $i; ?>]">
+											<option value="">None</option>
+											<? foreach($this->_salesforce_fields AS $field => $type) { ?>
+											<option value="<? echo $field; ?>"><? echo $field; ?></option>
+											<? } ?>
+										</select>
+									</td>
+								</tr>
+								<? } ?>
+							</tbody>
+						</table>
+						<input type="submit" class="button-primary" value="Save mapping" />
+					</form>
 				</div>
+			</div>
 		</div>
 	</div>
 </div>
