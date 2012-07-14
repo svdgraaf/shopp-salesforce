@@ -17,7 +17,8 @@ License: GPLv2
 	the Free Software Foundation, either version 3 of the License, or
 	(at your option) any later version.
 
-	This plugin is distributed in the hope that it will be useful","	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	This plugin is distributed in the hope that it will be useful 
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
 	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 	GNU General Public License for more details.
 
@@ -128,11 +129,11 @@ class Shopp_SalesForce {
 		$lObject->Phone = $purchase->phone;
 
 		// add Address data
-		$lObject->MailingCity = $address->city;
-		$lObject->MailingCountry = $address->country;
-		$lObject->MailingPostalCode = $address->postcode;
-		$lObject->MailingState = $address->state;
-		$lObject->MailingStreet = $address->address;
+		$lObject->City = $address->city;
+		$lObject->Country = $address->country;
+		$lObject->PostalCode = $address->postcode;
+		$lObject->State = $address->state;
+		$lObject->Street = $address->address;
 
 		// get the meta data from the mapping
 		foreach($this->api_mapping AS $metafield => $field)
@@ -153,37 +154,123 @@ class Shopp_SalesForce {
 		{
 			$purchase->company = 'Onbekend';	
 		}
-		// $lObject->Name = (string)$purchase->company;
-		$lObject->LeadSource = 'Shopp';
+		$lObject->Company = (string)$purchase->company;
 
-		// upsert the contact (find-and-update/create)
+		// Set the leadsource to Shopp
+		$lObject->LeadSource = 'Z24 Antwoord';
+
+		// upsert the lead (find-and-update/create)
 		try {
-			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Contact');
+			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Lead');
+			$type = 'lead';
 		}
 		catch(Exception $e) {
-			// return 'Failed creating the lead :(';
 			return array('Failed creating the lead :(', $e);
 		}
+
+		// check if the account failed, and try to add ad a contact
+		// (this happens when an account was converted in the past)
+		if($leadResponse[0]->success != true){
+			// setup Contact object
+			$lObject = new stdClass();
+
+			// add Personal data
+			$lObject->FirstName = $customer->firstname;
+			$lObject->LastName = $customer->lastname;
+			$lObject->Email = $customer->email;
+			$lObject->Phone = $purchase->phone;
+			$type = 'contact';
+
+			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Contact');
+		}
+
+		if( $leadResponse[0]->success != true ){
+			return array('failed creating the Contact :(', $e);
+		}
+		$leadId = $leadResponse[0]->id;
 
 		// connect them together
 		$mObject = new stdClass();
 		$mObject->CampaignId = $campaignResponse[0]->id;
-		$mObject->ContactId = $leadResponse[0]->id;
+		if($type == 'lead') {
+			$mObject->LeadId = $leadId;
+		} else {
+			$mObject->ContactId = $leadId;
+		}
+		$mObject->Status = 'Downloaded';
 		try {
-			$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
+			$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');	
 		}
 		catch(Exception $e) {
 			return array('Failed adding the lead to the campaign :(', $e);
+		}
+
+		// we added the lead to the campaign, now check if he subscribed to any of our newsletters
+		// if so, convert the lead into an account
+		$n1 = get_user_meta($userid, 'ondernemer_alerts' , true);
+		$n2 = get_user_meta($userid, 'z24_alerts' , true);
+
+		if($n1 != false || $n2 != false) {
+			$ondernemer_alerts = '701E0000000QSxf'; // ondernemer alerts
+			$z24_alerts = '701E0000000QSxa'; // z24 alerts
+			
+			// ondernemer alerts
+			if($n1 != false) {
+				$mObject = new stdClass();
+				$mObject->CampaignId = $ondernemer_alerts;
+				if($type == 'lead') {
+					$mObject->LeadId = $leadId;
+				} else {
+					$mObject->ContactId = $leadId;
+				}
+				$mObject->Status = 'Subscribed';
+				try {
+					$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');	
+				}
+				catch(Exception $e) {
+					// do nothing
+				}
+			}
+
+			// z24 alerts
+			if($n2 != false) {
+				$mObject = new stdClass();
+				$mObject->CampaignId = $z24_alerts;
+				if($type == 'lead') {
+					$mObject->LeadId = $leadId;
+				} else {
+					$mObject->ContactId = $leadId;
+				}
+				$mObject->Status = 'Subscribed';
+				try {
+					$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');	
+				}
+				catch(Exception $e) {
+					// do nothing
+				}
+			}
+
+			// convert the lead to a contact
+			if($type == 'lead') {
+				$leadConvert = new stdClass;
+				$leadConvert->convertedStatus = 'Closed - Converted';
+				$leadConvert->doNotCreateOpportunity = true;
+				$leadConvert->leadId = $leadId;
+				$leadConvert->overwriteLeadSource = false;
+				$leadConvert->sendNotificationEmail = false;
+				$leadConvertArray = array($leadConvert);
+				$leadConvertResponse = $sfClient->convertLead($leadConvertArray);
+			}
 		}
 
 		// set a cookie, so we can track the user, set it on the main hostname
 		$host = '.z24.nl';
 		// $host = '192.168.10.146';
 		$cookieValue = $leadResponse[0]->id . '-' . md5($leadResponse[0]->id + '-z24-salesforce-contact');
-		$cookie = setcookie('__zts', $cookieValue); //, time()+60*60*24*30, '/', $host);
+		$cookie = setcookie('__zts', $cookieValue, time()+60*60*24*30, '/', $host);
 
 		// return the response
-		return array($cookieValue, $cookie, $lObject, $leadResponse, $cObject, $campaignResponse, $mObject, $campaignMemberResponse);
+		return array($cookieValue, $cookie, $type, $lObject, $leadResponse, $leadConvertResponse, $cObject, $campaignResponse, $mObject, $campaignMemberResponse);
 	}
 
 	public function render_display_settings() {
@@ -221,7 +308,6 @@ class Shopp_SalesForce {
 			$this->api_mapping = $mapping;
 			update_option("shopp_salesforce_api_mapping", json_encode($this->api_mapping));
 		}
-		var_dump($_COOKIE);
 
 ?>
 <div class="wrap">
@@ -251,7 +337,7 @@ class Shopp_SalesForce {
 						<? var_dump($response); ?>
 					</pre>
 				<? }?>
-				<h3 class="hndle"><span>Salesforce meta-mapping</span></h3>
+				<h3 class="hndle"><span>Salesforce metadata-mapping</span></h3>
 				<div class="inside">
 					<form action="" method="post">
 						<table>
