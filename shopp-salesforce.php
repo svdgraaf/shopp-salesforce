@@ -66,6 +66,11 @@ class Shopp_SalesForce {
 	public function init() {
 		// Actions and filters
 		add_action('admin_menu', array(&$this, 'admin_menu'));
+		add_action('wp_footer', array(&$this, 'tracker'));
+	}
+
+	public function tracker(){
+		return '<img src="' . $_SERVER['HTTP_HOST'] . '/wp-content/plugins/shopp-salesforce/track.php?c=foo" />';
 	}
 
 	public function admin_menu() {
@@ -123,11 +128,11 @@ class Shopp_SalesForce {
 		$lObject->Phone = $purchase->phone;
 
 		// add Address data
-		$lObject->City = $address->city;
-		$lObject->Country = $address->country;
-		$lObject->PostalCode = $address->postcode;
-		$lObject->State = $address->state;
-		$lObject->Street = $address->address;
+		$lObject->MailingCity = $address->city;
+		$lObject->MailingCountry = $address->country;
+		$lObject->MailingPostalCode = $address->postcode;
+		$lObject->MailingState = $address->state;
+		$lObject->MailingStreet = $address->address;
 
 		// get the meta data from the mapping
 		foreach($this->api_mapping AS $metafield => $field)
@@ -148,11 +153,12 @@ class Shopp_SalesForce {
 		{
 			$purchase->company = 'Onbekend';	
 		}
-		$lObject->Company = (string)$purchase->company;
+		// $lObject->Name = (string)$purchase->company;
+		$lObject->LeadSource = 'Shopp';
 
 		// upsert the contact (find-and-update/create)
 		try {
-			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Lead');
+			$leadResponse = $sfClient->upsert('Email', array($lObject), 'Contact');
 		}
 		catch(Exception $e) {
 			// return 'Failed creating the lead :(';
@@ -162,7 +168,7 @@ class Shopp_SalesForce {
 		// connect them together
 		$mObject = new stdClass();
 		$mObject->CampaignId = $campaignResponse[0]->id;
-		$mObject->LeadId = $leadResponse[0]->id;
+		$mObject->ContactId = $leadResponse[0]->id;
 		try {
 			$campaignMemberResponse = $sfClient->create(array($mObject), 'CampaignMember');		
 		}
@@ -170,8 +176,14 @@ class Shopp_SalesForce {
 			return array('Failed adding the lead to the campaign :(', $e);
 		}
 
+		// set a cookie, so we can track the user, set it on the main hostname
+		$host = '.z24.nl';
+		// $host = '192.168.10.146';
+		$cookieValue = $leadResponse[0]->id . '-' . md5($leadResponse[0]->id + '-z24-salesforce-contact');
+		$cookie = setcookie('__zts', $cookieValue); //, time()+60*60*24*30, '/', $host);
+
 		// return the response
-		return array($lObject, $leadResponse, $cObject, $campaignResponse, $mObject, $campaignMemberResponse);
+		return array($cookieValue, $cookie, $lObject, $leadResponse, $cObject, $campaignResponse, $mObject, $campaignMemberResponse);
 	}
 
 	public function render_display_settings() {
@@ -209,6 +221,7 @@ class Shopp_SalesForce {
 			$this->api_mapping = $mapping;
 			update_option("shopp_salesforce_api_mapping", json_encode($this->api_mapping));
 		}
+		var_dump($_COOKIE);
 
 ?>
 <div class="wrap">
